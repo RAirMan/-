@@ -1,0 +1,69 @@
+import requests
+import math
+import pymysql
+
+url = 'https://weibo.com/ajax/statuses/mymblog?uid=1195242865&page={page}&feature=0'
+headers = {
+    'user-agent':'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.64 Safari/537.36',
+    'Accept': 'application/json',
+    'cookie': 'SINAGLOBAL=6612396656384.904.1678890363091; SCF=Ah07cZCYPD3ziT1y-BA3xngQrf_fhL-e0_nm2aVTskX1F6OYw6Cj9jP1ECs9YPygzhY9bb1q3SRCaLpTdp3MHjM.; XSRF-TOKEN=yVElx-BbkJU5MHZVoMM8Ey6n; _s_tentry=weibo.com; Apache=705629895373.594.1719584390695; ULV=1719584390742:5:2:2:705629895373.594.1719584390695:1719395830106; SUBP=0033WrSXqPxfM72wWs9jqgMF55529P9D9WhclDH4u.OIbM8rAJTr128z5JpVF02N1hB01h24e0B4; SUB=_2AkMRI1FjdcPxrAVTkfwXz2jkaYlH-jyi9jiVAn7uJhMyAxh87mglqSVutBF-XG7gIeZ3FvChi7-2MLihIH4BmdnP; WBPSESS=Dt2hbAUaXfkVprjyrAZT_Nwg9OgWrNgORcosnibGyT40gePTDd6KA1S2msZYoXC9RjJrTJpipifQgPfifnt4_BUJg23wrL88M1w5Oi_r2EaTxMfsz-J3aVRhXr7zj6o-KrXKbVzMap0OkqQhC7UhDg=='
+}
+db = pymysql.connect(host='localhost',user='root',password='123456',port=3306)
+cursor = db.cursor()
+cursor.execute('use spiders')
+print('数据库连接成功!')
+
+def scrape_api(page):
+    Json_url = url.format(page=page)
+    print(f'现在开始爬取：{Json_url}')
+    return Json_url
+
+def get_data(url):
+    response = requests.get(url=url, headers=headers)
+    data = []
+    if response.status_code == 200:
+        content = response.json()
+        text = content['data']['list']
+        for i in range(len(text)):
+            current_list = text[i]
+            one_data = {
+                '微博内容':current_list.get('text_raw'),
+                '评论数':current_list.get('comments_count'),
+                '点赞数':current_list.get('attitudes_count'),
+                '转发数':current_list['number_display_strategy'].get('display_text')
+            }
+            data.append(one_data)
+    else:
+        print("status不为200！")
+    return data
+
+def save_data(data):
+    sql = "insert into weibo(content,comments_count,attitudes_count,display_text) values (%s, %s, %s, %s)"
+    for i in range(len(data)):
+        wait_insert_data = (
+            data[i].get('微博内容')[:1000],
+            data[i].get('评论数'),
+            data[i].get('点赞数'),
+            data[i].get('转发数'),
+        )
+        try:
+            cursor.execute(sql, wait_insert_data)
+            db.commit()
+        except Exception as e:
+            print(f'数据存储失败，原因是：{e}')
+
+def main():
+    page_number = math.ceil( int(input('你需要爬取多少条微博：')) / 20 )
+    for i in range(1,page_number+1):
+        Json_url = scrape_api(i)
+        data = get_data(Json_url)
+        if data:
+            print(f'爬取完成{i * 20}条微博')
+            save_data(data)
+        else:
+            print(f"数据不足{page_number}条")
+            break
+    db.close()
+
+if __name__ == '__main__':
+    main()
